@@ -1,0 +1,28 @@
+# =============================================================
+# Render Blueprint — Deploy the backend API
+# =============================================================
+# Place this file at the root of your repo for Render auto-deploy.
+# See: https://render.com/docs/blueprint-spec
+# =============================================================
+
+services:
+  - type: web
+    name: lead-scoring-api
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false  # Set manually in Render dashboard
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: PORT
+        value: 3001
+    healthCheckPath: /api/health
+    autoDeploy: true
