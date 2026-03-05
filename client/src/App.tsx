@@ -10,6 +10,10 @@ import Leads from "./pages/Leads";
 import Pipeline from "./pages/Pipeline";
 import Subscribers from "./pages/Subscribers";
 import Settings from "./pages/Settings";
+import AIScoring from "./pages/AIScoring";
+import Outreach from "./pages/Outreach";
+import Notifications from "./pages/Notifications";
+import Analytics from "./pages/Analytics";
 import DashboardLayout from "./components/DashboardLayout";
 
 function Router() {
@@ -34,6 +38,26 @@ function Router() {
       <Route path={"/subscribers"}>
         <DashboardLayout>
           <Subscribers />
+        </DashboardLayout>
+      </Route>
+      <Route path={"/ai-scoring"}>
+        <DashboardLayout>
+          <AIScoring />
+        </DashboardLayout>
+      </Route>
+      <Route path={"/outreach"}>
+        <DashboardLayout>
+          <Outreach />
+        </DashboardLayout>
+      </Route>
+      <Route path={"/notifications"}>
+        <DashboardLayout>
+          <Notifications />
+        </DashboardLayout>
+      </Route>
+      <Route path={"/analytics"}>
+        <DashboardLayout>
+          <Analytics />
         </DashboardLayout>
       </Route>
       <Route path={"/settings"}>

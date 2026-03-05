@@ -1,6 +1,7 @@
 /*
  * Subscribers Page — Subscriber acquisition, management, and engagement tracking
  * Design: "Warm Precision" — Clean forms, warm accents, editorial typography
+ * Uses real data from database via tRPC
  */
 import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +23,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { subscribers, type Subscriber, type SubscriberSource } from "@/lib/data";
+import { trpc } from "@/lib/trpc";
 import {
   Search,
   UserPlus,
@@ -32,9 +33,11 @@ import {
   XCircle,
   AlertCircle,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -54,15 +57,25 @@ export default function Subscribers() {
   const [newEmail, setNewEmail] = useState("");
   const [newSource, setNewSource] = useState<string>("organic");
 
-  const activeCount = subscribers.filter((s) => s.status === "active").length;
-  const unsubCount = subscribers.filter((s) => s.status === "unsubscribed").length;
-  const bouncedCount = subscribers.filter((s) => s.status === "bounced").length;
-  const avgEngagement = Math.round(
-    subscribers.filter((s) => s.status === "active").reduce((a, b) => a + b.engagementRate, 0) / activeCount
-  );
+  const { data: subscribersData, isLoading, refetch } = trpc.subscribers.list.useQuery({ limit: 50 });
+  const { data: subStats } = trpc.subscribers.stats.useQuery();
+  const createSubscriber = trpc.subscribers.create.useMutation({
+    onSuccess: () => {
+      toast.success(`Subscriber "${newName}" added successfully`);
+      setAddOpen(false);
+      setNewName("");
+      setNewEmail("");
+      setNewSource("organic");
+      refetch();
+    },
+    onError: (err) => {
+      toast.error(`Failed to add subscriber: ${err.message}`);
+    },
+  });
 
   const filtered = useMemo(() => {
-    let subs = [...subscribers];
+    if (!subscribersData || !Array.isArray(subscribersData)) return [];
+    let subs = [...subscribersData];
     if (search) {
       const q = search.toLowerCase();
       subs = subs.filter(
@@ -72,19 +85,27 @@ export default function Subscribers() {
     if (statusFilter !== "all") subs = subs.filter((s) => s.status === statusFilter);
     if (sourceFilter !== "all") subs = subs.filter((s) => s.source === sourceFilter);
     return subs;
-  }, [search, statusFilter, sourceFilter]);
+  }, [subscribersData, search, statusFilter, sourceFilter]);
 
   const handleAddSubscriber = () => {
     if (!newName || !newEmail) {
       toast.error("Please fill in all fields");
       return;
     }
-    toast.success(`Subscriber "${newName}" added successfully`);
-    setAddOpen(false);
-    setNewName("");
-    setNewEmail("");
-    setNewSource("organic");
+    createSubscriber.mutate({
+      name: newName,
+      email: newEmail,
+      source: newSource as "organic" | "paid" | "referral" | "social" | "email",
+    });
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-terracotta" />
+      </div>
+    );
+  }
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
@@ -93,7 +114,7 @@ export default function Subscribers() {
         <div>
           <h1 className="text-3xl font-display text-foreground">Subscribers</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Manage your subscriber base and track acquisition channels.
+            Manage your subscriber base and track acquisition channels. {subStats?.total ?? 0} total subscribers.
           </p>
         </div>
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -142,7 +163,14 @@ export default function Subscribers() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={handleAddSubscriber} className="w-full bg-terracotta hover:bg-terracotta-dark text-white">
+              <Button
+                onClick={handleAddSubscriber}
+                className="w-full bg-terracotta hover:bg-terracotta-dark text-white"
+                disabled={createSubscriber.isPending}
+              >
+                {createSubscriber.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : null}
                 Add Subscriber
               </Button>
             </div>
@@ -161,7 +189,7 @@ export default function Subscribers() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Active</p>
-                  <p className="text-xl font-semibold tabular-nums text-foreground">{activeCount}</p>
+                  <p className="text-xl font-semibold tabular-nums text-foreground">{subStats?.active ?? 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -176,7 +204,7 @@ export default function Subscribers() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Unsubscribed</p>
-                  <p className="text-xl font-semibold tabular-nums text-foreground">{unsubCount}</p>
+                  <p className="text-xl font-semibold tabular-nums text-foreground">{subStats?.unsubscribed ?? 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -191,7 +219,7 @@ export default function Subscribers() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Bounced</p>
-                  <p className="text-xl font-semibold tabular-nums text-foreground">{bouncedCount}</p>
+                  <p className="text-xl font-semibold tabular-nums text-foreground">{subStats?.bounced ?? 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -205,8 +233,8 @@ export default function Subscribers() {
                   <BarChart3 className="w-4 h-4 text-terracotta" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Avg. Engagement</p>
-                  <p className="text-xl font-semibold tabular-nums text-foreground">{avgEngagement}%</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                  <p className="text-xl font-semibold tabular-nums text-foreground">{subStats?.total ?? 0}</p>
                 </div>
               </div>
             </CardContent>
@@ -270,62 +298,66 @@ export default function Subscribers() {
                 <tbody>
                   {filtered.map((sub) => (
                     <tr key={sub.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <div>
                           <p className="font-medium text-foreground">{sub.name}</p>
                           <p className="text-xs text-muted-foreground">{sub.email}</p>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <Badge variant="secondary" className="text-xs capitalize">{sub.source}</Badge>
+                      <td className="py-3 px-4">
+                        <Badge variant="outline" className="text-xs capitalize">{sub.source}</Badge>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <Badge
                           variant="secondary"
-                          className={`text-xs ${
+                          className={`text-xs capitalize ${
                             sub.status === "active"
-                              ? "text-sage-dark bg-green-50"
+                              ? "bg-sage/10 text-sage-dark"
                               : sub.status === "unsubscribed"
-                              ? "text-amber-600 bg-amber-50"
-                              : "text-red-500 bg-red-50"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-red-50 text-red-600"
                           }`}
                         >
                           {sub.status}
                         </Badge>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-terracotta"
-                              style={{ width: `${sub.leadScore}%` }}
+                              style={{ width: `${sub.leadScore ?? 0}%` }}
                             />
                           </div>
-                          <span className="text-xs font-medium tabular-nums text-foreground">{sub.leadScore}</span>
+                          <span className="text-xs tabular-nums font-medium">{sub.leadScore ?? 0}</span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-sage"
-                              style={{ width: `${sub.engagementRate}%` }}
+                              style={{ width: `${sub.engagementRate ?? 0}%` }}
                             />
                           </div>
-                          <span className="text-xs font-medium tabular-nums text-foreground">{sub.engagementRate}%</span>
+                          <span className="text-xs tabular-nums font-medium">{sub.engagementRate ?? 0}%</span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-xs text-muted-foreground">{sub.subscribedAt}</td>
+                      <td className="py-3 px-4 text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}
+                      </td>
                     </tr>
                   ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                        <p className="text-sm">No subscribers match your filters.</p>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-            {filtered.length === 0 && (
-              <div className="py-12 text-center text-muted-foreground">
-                <p className="text-sm">No subscribers match your filters.</p>
-              </div>
-            )}
           </CardContent>
         </Card>
       </motion.div>
