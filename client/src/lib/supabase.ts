@@ -1,10 +1,10 @@
 /**
  * Supabase Client Configuration
- * 
+ *
  * In production, set these environment variables:
  *   VITE_SUPABASE_URL — Your Supabase project URL
  *   VITE_SUPABASE_ANON_KEY — Your Supabase anonymous key
- * 
+ *
  * The frontend uses the anon key (public, row-level security enforced).
  * The backend uses the service key (private, full access).
  */
@@ -18,6 +18,14 @@ export const SUPABASE_CONFIG = {
 // Render backend API URL
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://your-api.onrender.com';
 
+function sanitizeEndpoint(endpoint: string) {
+  // Defensive cleanup to prevent accidental whitespace / punctuation in the path
+  // (e.g. "/api/leads (" -> "/api/leads")
+  const trimmed = endpoint.trim();
+  // remove trailing whitespace and stray "(" or ")" characters
+  return trimmed.replace(/\s()]+$/g, "");
+}
+
 /**
  * Helper to make API calls to the Render backend
  */
@@ -26,7 +34,9 @@ export async function apiCall<T = unknown>(
   options?: RequestInit
 ): Promise<{ data: T; error?: string }> {
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const safeEndpoint = sanitizeEndpoint(endpoint);
+
+    const response = await fetch(`${{API_BASE_URL}}${{safeEndpoint}}`, {
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
