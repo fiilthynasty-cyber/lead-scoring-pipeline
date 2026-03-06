@@ -1,1 +1,1 @@
-gunicorn==23.0.0
+# Intentionally empty: this project is deployed as a Node service (see render.yaml).
