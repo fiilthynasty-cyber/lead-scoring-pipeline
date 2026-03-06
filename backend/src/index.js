@@ -47,6 +47,15 @@ app.use(cors({
 app.use(morgan('combined'));
 app.use(express.json());
 
+// --- Root Route ---
+app.get('/', (req, res) => {
+  res.json({
+    message: 'LeadScore Pipeline API is running.',
+    health: '/api/health',
+    docs: 'See /api/health for status. Available endpoints: /api/leads, /api/subscribers, /api/pipeline, /api/scoring-rules, /api/analytics/overview',
+  });
+});
+
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
   res.json({
@@ -397,6 +406,18 @@ app.get('/api/analytics/overview', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// =====================================================
+// 404 CATCH-ALL
+// =====================================================
+
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Not Found',
+    path: req.path,
+    message: 'The requested route does not exist. Visit /api/health for status or check the docs for valid endpoints.',
+  });
 });
 
 // =====================================================
