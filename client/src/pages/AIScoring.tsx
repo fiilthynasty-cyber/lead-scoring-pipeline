@@ -34,6 +34,10 @@ import {
   Trash2,
   Sparkles,
   BarChart3,
+  Globe,
+  Radar,
+  Building2,
+  Link2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -52,6 +56,25 @@ interface Signal {
   type: string;
   description: string;
   weight: number;
+}
+
+interface UrlLeadSuggestion {
+  name: string | null;
+  title: string;
+  company: string;
+  email: string | null;
+  linkedinHint: string;
+  confidence: number;
+  reason: string;
+  outreachAngle: string;
+}
+
+interface UrlLeadDiscoveryResult {
+  url: string;
+  companySummary: string;
+  icp: string;
+  strategy: string;
+  leads: UrlLeadSuggestion[];
 }
 
 const signalTypes = [
@@ -86,6 +109,8 @@ export default function AIScoring() {
   const [signals, setSignals] = useState<Signal[]>([
     { type: "Page Visit", description: "", weight: 5 },
   ]);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [urlLeadResult, setUrlLeadResult] = useState<UrlLeadDiscoveryResult | null>(null);
 
   // Queries
   const { data: allLeads, isLoading: leadsLoading } = trpc.leads.list.useQuery({ limit: 100 });
@@ -109,6 +134,16 @@ export default function AIScoring() {
     },
     onError: (err) => {
       toast.error(`Batch scoring failed: ${err.message}`);
+    },
+  });
+
+  const findLeadsForUrl = trpc.aiScoring.findLeadsForUrl.useMutation({
+    onSuccess: (data) => {
+      setUrlLeadResult(data);
+      toast.success(`Found ${data.leads.length} lead opportunities`);
+    },
+    onError: (err) => {
+      toast.error(`URL analysis failed: ${err.message}`);
     },
   });
 
@@ -149,6 +184,23 @@ export default function AIScoring() {
       return;
     }
     batchScore.mutate({ leadIds: allLeads.map(l => l.id) });
+  };
+
+  const handleFindLeadsForUrl = () => {
+    if (!websiteUrl.trim()) {
+      toast.error("Please enter a website URL");
+      return;
+    }
+    findLeadsForUrl.mutate({ url: websiteUrl.trim() });
+  };
+
+  const useSuggestedLead = (lead: UrlLeadSuggestion) => {
+    setLeadName(lead.name ?? "Prospect");
+    setLeadEmail(lead.email ?? "prospect@example.com");
+    setLeadCompany(lead.company);
+    setLeadTitle(lead.title);
+    setAdditionalContext(`Source URL: ${urlLeadResult?.url ?? "Unknown"}\nReason: ${lead.reason}\nOutreach Angle: ${lead.outreachAngle}`);
+    toast.success("Lead details copied into scorer");
   };
 
   const getScoreColor = (score: number) => {
@@ -213,6 +265,122 @@ export default function AIScoring() {
           </Card>
         ))}
       </motion.div>
+
+      <motion.section variants={fadeUp} className="relative overflow-hidden rounded-2xl border border-terracotta/25 bg-gradient-to-br from-terracotta/10 via-sage/10 to-clay/10 p-5 md:p-6">
+        <div className="pointer-events-none absolute -top-20 -right-16 h-52 w-52 rounded-full bg-terracotta/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-12 h-52 w-52 rounded-full bg-sage/20 blur-3xl" />
+
+        <div className="relative space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="bg-card/70 text-foreground border-border/60">
+              <Radar className="w-3 h-3 mr-1" />
+              URL Lead Radar
+            </Badge>
+            <Badge variant="outline" className="bg-card/50">
+              Futuristic Prospect Discovery
+            </Badge>
+          </div>
+
+          <div>
+            <h2 className="text-xl md:text-2xl font-display text-foreground">Drop in a URL, get lead targets instantly</h2>
+            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+              Paste any company website and AI will infer the ICP, then generate high-probability buyers with outreach angles.
+            </p>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Globe className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Input
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                placeholder="https://company-site.com"
+                className="pl-9 h-11 bg-card/70 border-border/50"
+              />
+            </div>
+            <Button
+              onClick={handleFindLeadsForUrl}
+              disabled={findLeadsForUrl.isPending}
+              className="h-11 px-5 bg-espresso hover:bg-espresso-light text-white"
+            >
+              {findLeadsForUrl.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Scanning Site
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4 mr-2" />
+                  Find Leads For URL
+                </>
+              )}
+            </Button>
+          </div>
+
+          {urlLeadResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-4 rounded-xl border border-border/40 bg-card/65 p-4"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border/40 bg-background/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Company Read</p>
+                  <p className="text-sm text-foreground mt-1">{urlLeadResult.companySummary}</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-background/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Ideal Buyer Profile</p>
+                  <p className="text-sm text-foreground mt-1">{urlLeadResult.icp}</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-background/60 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Strategy</p>
+                  <p className="text-sm text-foreground mt-1">{urlLeadResult.strategy}</p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-2">Lead Opportunities</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {urlLeadResult.leads.map((lead, idx) => (
+                    <motion.div
+                      key={`${lead.company}-${lead.title}-${idx}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.04 }}
+                      className="rounded-lg border border-border/40 bg-background/70 p-3 space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{lead.name ?? "Potential Contact"}</p>
+                          <p className="text-xs text-muted-foreground">{lead.title}</p>
+                        </div>
+                        <Badge className={getScoreColor(lead.confidence)}>{lead.confidence}%</Badge>
+                      </div>
+
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <p className="flex items-center gap-1.5"><Building2 className="w-3 h-3" />{lead.company}</p>
+                        <p className="flex items-center gap-1.5"><Link2 className="w-3 h-3" />{lead.linkedinHint}</p>
+                      </div>
+
+                      <p className="text-xs text-foreground/85">{lead.reason}</p>
+                      <p className="text-xs text-foreground/75 italic">Angle: {lead.outreachAngle}</p>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => useSuggestedLead(lead)}
+                        className="w-full text-xs"
+                      >
+                        Use In AI Scorer
+                      </Button>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      </motion.section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Manual Scoring Form */}

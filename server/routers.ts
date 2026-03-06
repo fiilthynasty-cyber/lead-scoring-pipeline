@@ -229,6 +229,161 @@ ${signalText}`
         }
         return results;
       }),
+
+    findLeadsForUrl: publicProcedure
+      .input(z.object({
+        url: z.string().min(3),
+      }))
+      .mutation(async ({ input }) => {
+        const normalizeUrl = (rawUrl: string) => {
+          const trimmed = rawUrl.trim();
+          if (/^https?:\/\//i.test(trimmed)) {
+            return trimmed;
+          }
+          return `https://${trimmed}`;
+        };
+
+        const stripHtml = (html: string) => {
+          return html
+            .replace(/<script[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        };
+
+        const normalizedUrl = normalizeUrl(input.url);
+        let pageText = "";
+
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+
+          const response = await fetch(normalizedUrl, {
+            method: "GET",
+            signal: controller.signal,
+            headers: {
+              "user-agent": "LeadScoreBot/1.0 (+lead-scoring-pipeline)",
+              accept: "text/html,application/xhtml+xml",
+            },
+          });
+
+          clearTimeout(timeout);
+
+          if (response.ok) {
+            const html = await response.text();
+            pageText = stripHtml(html).slice(0, 7000);
+          }
+        } catch {
+          // Continue with URL-only analysis if site content cannot be fetched.
+          pageText = "";
+        }
+
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a B2B lead intelligence analyst.
+
+Your job:
+1) Analyze the company website URL and any fetched page text.
+2) Infer what this company sells and who their ideal buyers are.
+3) Return high-probability lead candidates as target buyer personas and prospect suggestions.
+
+Rules:
+- Do not invent private data.
+- If person-level data is unknown, leave name and email as null.
+- Prefer realistic job titles and company types likely to buy.
+- Keep reasons concise and actionable.`,
+            },
+            {
+              role: "user",
+              content: `Analyze this website and find leads.
+
+Website URL: ${normalizedUrl}
+
+Homepage content sample:
+${pageText || "(No page content retrieved. Use URL/domain inference only.)"}`,
+            },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "url_lead_discovery",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  companySummary: { type: "string" },
+                  icp: { type: "string" },
+                  strategy: { type: "string" },
+                  leads: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: ["string", "null"] },
+                        title: { type: "string" },
+                        company: { type: "string" },
+                        email: { type: ["string", "null"] },
+                        linkedinHint: { type: "string" },
+                        confidence: { type: "number" },
+                        reason: { type: "string" },
+                        outreachAngle: { type: "string" },
+                      },
+                      required: [
+                        "name",
+                        "title",
+                        "company",
+                        "email",
+                        "linkedinHint",
+                        "confidence",
+                        "reason",
+                        "outreachAngle"
+                      ],
+                      additionalProperties: false,
+                    },
+                    minItems: 4,
+                    maxItems: 10,
+                  },
+                },
+                required: ["companySummary", "icp", "strategy", "leads"],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const parsed = JSON.parse(typeof content === "string" ? content : "{}");
+
+        await createAnalyticsEvent({
+          eventType: "ai_score",
+          entityType: "lead",
+          entityId: 0,
+          value: Array.isArray(parsed?.leads) ? parsed.leads.length : 0,
+        });
+
+        return {
+          url: normalizedUrl,
+          companySummary: parsed.companySummary,
+          icp: parsed.icp,
+          strategy: parsed.strategy,
+          leads: (parsed.leads ?? []).map((lead: {
+            name: string | null;
+            title: string;
+            company: string;
+            email: string | null;
+            linkedinHint: string;
+            confidence: number;
+            reason: string;
+            outreachAngle: string;
+          }) => ({
+            ...lead,
+            confidence: Math.max(1, Math.min(100, Math.round(lead.confidence))),
+          })),
+        };
+      }),
   }),
 
   // ─── Outreach ────────────────────────────────────────────────────
